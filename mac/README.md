@@ -38,12 +38,32 @@ Two things do not transfer:
 Requires Xcode's command line tools (Swift 5.7 or later) and macOS 12 or later.
 
     cd mac
-    make            # builds build/Ditto.app
+    make            # builds build/Ditto.app for this Mac
+    make universal  # builds it for arm64 and x86_64
     make run        # builds and launches it
     make install    # copies it to /Applications
 
 There is no Xcode project: it is a Swift package, and the `Makefile` wraps
 `swift build` with the few steps that turn the binary into an app bundle.
+
+## Continuous integration
+
+`.github/workflows/macos.yml` builds this on every push and pull request that
+touches `mac/`, and can be started by hand from the Actions tab. It:
+
+- builds `Ditto.app` - universal on `master`, for the runner's own architecture
+  on a pull request, where quicker feedback is worth more
+- checks the bundle: both architectures present, `Info.plist` valid, the
+  `LSUIElement` flag set, the ad-hoc signature verifying
+- launches the app with a throwaway `HOME` and reads the database back, to
+  confirm the schema and both triggers are what Windows Ditto expects. This step
+  is advisory: a CI runner has no real desktop session, so it can fail for
+  reasons that have nothing to do with the code.
+- uploads the zipped app as a build artifact, and attaches it to a GitHub
+  release when one is published
+
+The Windows workflows ignore `mac/`, so a change here never cuts a Windows
+release, and a change to the Windows source never starts a macOS build.
 
 ## Permissions
 

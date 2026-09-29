@@ -1,0 +1,208 @@
+name: macOS
+
+# Builds the macOS port in mac/ - a Swift package that the Makefile wraps into
+# Ditto.app. Nothing here touches the Windows build, and the path filters keep
+# Windows-only changes from starting a macOS run.
+
+on:
+  push:
+    branches:
+      - master
+      - 'claude/**'
+    paths:
+      - 'mac/**'
+      - '.github/workflows/macos.yml'
+  pull_request:
+    paths:
+      - 'mac/**'
+      - '.github/workflows/macos.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Ditto.app
+    runs-on: macos-latest
+
+    env:
+      # Pull requests build for this runner's architecture only, for quicker
+      # feedback. Everything else builds universal, which is what you would
+      # hand to someone.
+      UNIVERSAL: ${{ github.event_name == 'pull_request' && 'no' || 'yes' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show the toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Build Ditto.app
+        working-directory: mac
+        run: |
+          if [ "$UNIVERSAL" = "yes" ]; then
+            make universal
+          else
+            make release
+          fi
+
+      - name: Check the bundle
+        working-directory: mac
+        run: |
+          set -euo pipefail
+          APP="build/Ditto.app"
+          BIN="$APP/Contents/MacOS/Ditto"
+
+          test -x "$BIN"
+          plutil -lint "$APP/Contents/Info.plist"
+
+          echo "architectures: $(lipo -archs "$BIN")"
+          if [ "$UNIVERSAL" = "yes" ]; then
+            for arch in arm64 x86_64; do
+              lipo -archs "$BIN" | tr ' ' '\n' | grep -qx "$arch" \
+                || { echo "::error::the binary is missing $arch"; exit 1; }
+            done
+          fi
+
+          # The port is a menu bar app; LSUIElement missing would give it a Dock
+          # icon and a main window it does not have.
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$APP/Contents/Info.plist")" = "true"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist"
+
+          codesign --verify --verbose=2 "$APP"
+
+      # Advisory: a CI runner has no real desktop session, so a GUI app starting
+      # there proves less than it would on a Mac in front of you. It still
+      # catches a crash on launch and confirms the database schema, which is the
+      # part that has to stay byte-compatible with Windows Ditto.
+      - name: Smoke test - launch, then read back the schema
+        id: smoke
+        continue-on-error: true
+        working-directory: mac
+        run: |
+          set -uo pipefail
+          export HOME="$RUNNER_TEMP/ditto-home"
+          mkdir -p "$HOME/Library/Application Support" "$HOME/Library/Preferences"
+
+          # Skip the first-run alert: a modal dialog would block the app, and
+          # turn the debug log on so a failure leaves something to read.
+          defaults write io.ditto.DittoMac CompletedFirstRun -bool true
+          defaults write io.ditto.DittoMac EnableDebugLogging -bool true
+
+          "build/Ditto.app/Contents/MacOS/Ditto" &
+          PID=$!
+          sleep 10
+          kill "$PID" 2>/dev/null || true
+          wait "$PID" 2>/dev/null || true
+
+          DB="$HOME/Library/Application Support/Ditto/Ditto.db"
+          LOG="$HOME/Library/Application Support/Ditto/Ditto.log"
+          [ -f "$LOG" ] && cat "$LOG"
+
+          if [ ! -f "$DB" ]; then
+            echo "::warning::the app did not create Ditto.db"
+            exit 1
+          fi
+
+          echo "--- schema ---"
+          sqlite3 "$DB" ".schema"
+
+          for table in Main Data Types CopyBuffers MainDeletes; do
+            found=$(sqlite3 "$DB" \
+              "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='$table';")
+            if [ "$found" != "1" ]; then
+              echo "::warning::the $table table is missing"
+              exit 1
+            fi
+          done
+
+          # The two triggers are what make deleting a clip quick on both
+          # platforms; a database without them would drift from Windows Ditto.
+          for trigger in delete_data_trigger MainDeletes_delete_data_trigger; do
+            found=$(sqlite3 "$DB" \
+              "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='$trigger';")
+            if [ "$found" != "1" ]; then
+              echo "::warning::the $trigger trigger is missing"
+              exit 1
+            fi
+          done
+
+          echo "the app launched and wrote the expected schema"
+
+      - name: Note a failed smoke test
+        if: steps.smoke.outcome == 'failure'
+        run: |
+          echo "::warning::The app built, but the launch smoke test did not pass."
+          echo "Look at the step above - on a CI runner this can also mean the"
+          echo "app could not reach a window server, rather than a real bug."
+
+      - name: Read the version
+        id: version
+        working-directory: mac
+        run: |
+          set -euo pipefail
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            build/Ditto.app/Contents/Info.plist)
+
+          # A release asset is named after the tag; anything else carries the
+          # commit, so two artifacts from the same day cannot be confused.
+          if [ "${{ github.event_name }}" = "release" ]; then
+            NAME="Ditto-macOS-${{ github.event.release.tag_name }}"
+          else
+            NAME="Ditto-macOS-$VERSION-${GITHUB_SHA:0:8}"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Zip the app
+        working-directory: mac
+        run: |
+          set -euo pipefail
+          # ditto, rather than zip: it keeps the bundle's symlinks, permissions
+          # and the code signature intact.
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/Ditto.app "build/${{ steps.version.outputs.name }}.zip"
+          ls -lh build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.name }}
+          path: mac/build/${{ steps.version.outputs.name }}.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Attach to the release
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          ls -lh artifacts
+          gh release upload "$TAG" artifacts/*.zip --clobber

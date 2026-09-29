@@ -15,11 +15,14 @@ extension Notification.Name {
 /// so a user who knows the Windows options can find the same knob here.
 final class Options {
 
-    static let shared = Options()
+    /// A `var`, and the initialiser takes its store, so a test can install an
+    /// instance backed by a throwaway suite instead of the real user defaults.
+    /// Nothing in the app reassigns it.
+    static var shared = Options()
 
     private let defaults: UserDefaults
 
-    private init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
     }
 

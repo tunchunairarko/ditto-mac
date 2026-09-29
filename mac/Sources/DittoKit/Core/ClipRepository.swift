@@ -41,6 +41,11 @@ final class ClipRepository {
         try DatabaseSchema.createOrUpgrade(db)
         db.registerSearchFunctions()
         database = db
+
+        // The duplicate short-circuit refers to a row id, which means nothing
+        // in a different file.
+        lastAddedCRC = 0
+        lastAddedID = 0
         Log.write("opened database at \(target.path)")
         return db
     }

@@ -12,7 +12,9 @@ enum DatabaseSchema {
     /// `#define INVALID_STICKY -(2147483647)` in Misc.h.
     static let invalidSticky: Double = -2_147_483_647
 
-    static let createStatements: [String] = [
+    /// Tables and triggers. These come first, and mention only columns that
+    /// every version of the schema has.
+    static let tableStatements: [String] = [
         "PRAGMA auto_vacuum = 1",
 
         """
@@ -81,6 +83,12 @@ enum DatabaseSchema {
         END
         """,
 
+    ]
+
+    /// Indexes. Several of them are on columns that a database written by an
+    /// older Ditto does not have yet, so these run only after the upgrade step
+    /// below has added them - creating an index on a missing column fails.
+    static let indexStatements: [String] = [
         "CREATE UNIQUE INDEX IF NOT EXISTS Main_ID on Main(lID ASC)",
         "CREATE UNIQUE INDEX IF NOT EXISTS Data_ID on Data(lID ASC)",
         "CREATE INDEX IF NOT EXISTS Main_ClipOrder on Main(clipOrder DESC)",
@@ -112,13 +120,15 @@ enum DatabaseSchema {
     ]
 
     static func createOrUpgrade(_ db: SQLiteDatabase) throws {
-        try db.executeScript(createStatements)
+        try db.executeScript(tableStatements)
 
         for (column, type) in expectedMainColumns
         where db.columnExists(table: "Main", column: column) == false {
             Log.write("adding missing Main column \(column)")
             _ = try db.execute("ALTER TABLE Main ADD COLUMN \(column) \(type)")
         }
+
+        try db.executeScript(indexStatements)
 
         // Rows written by very old versions have NULL ordering columns; the
         // list query sorts on them, so give them concrete values.

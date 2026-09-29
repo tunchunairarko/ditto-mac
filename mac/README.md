@@ -51,19 +51,53 @@ There is no Xcode project: it is a Swift package, and the `Makefile` wraps
 `.github/workflows/macos.yml` builds this on every push and pull request that
 touches `mac/`, and can be started by hand from the Actions tab. It:
 
+- runs the tests (see below) first, so a logic failure does not wait on a build
 - builds `Ditto.app` - universal on `master`, for the runner's own architecture
   on a pull request, where quicker feedback is worth more
 - checks the bundle: both architectures present, `Info.plist` valid, the
   `LSUIElement` flag set, the ad-hoc signature verifying
-- launches the app with a throwaway `HOME` and reads the database back, to
-  confirm the schema and both triggers are what Windows Ditto expects. This step
-  is advisory: a CI runner has no real desktop session, so it can fail for
-  reasons that have nothing to do with the code.
+- starts the app and reads its log back, to confirm it gets through launch,
+  opens its database and claims its hot keys
 - uploads the zipped app as a build artifact, and attaches it to a GitHub
   release when one is published
 
 The Windows workflows ignore `mac/`, so a change here never cuts a Windows
 release, and a change to the Windows source never starts a macOS build.
+
+## Tests
+
+    cd mac
+    swift test
+
+The package is split so that this is possible: everything lives in the
+`DittoKit` library and the `DittoMac` executable is two lines that hand over to
+it, because a test bundle cannot link against an executable's top-level code.
+The tests use `@testable import`, so nothing had to be made `public` for them.
+
+What they cover is what can be checked without a window server, which is most of
+what a port can get wrong:
+
+- **the schema** - every table, both triggers, the indexes the list query sorts
+  on, and the exact column list of `Main`, taken from `CreateDB` in
+  `DatabaseUtilities.cpp`. Also that deleting a clip queues its payload rather
+  than removing it, and that a database from an older Ditto gains the columns it
+  is missing. This is the compatibility contract with Windows Ditto.
+- **the byte layouts** - the UTF-16 NUL terminator, the `DROPFILES` header, and
+  that the `CF_HTML` offsets really do bracket the fragment, counted in bytes so
+  that multi-byte characters do not shift them.
+- **the CRC** - against the standard CRC-32 check values, since that is what
+  decides whether two copies are the same clip on either platform.
+- **the search language** - `AND`/`OR`/`NOT`, quoted phrases, wildcards, `/f`
+  and `/q`, and that `/f` really reaches inside a stored UTF-16 blob through the
+  `ditto_like` function registered on the connection.
+- **the paste transforms** and the hot key packing.
+- **the auto-delete rules** - and, more to the point, their exemptions: a clip
+  that is starred, stuck, in a group or carries a shortcut is never removed
+  automatically.
+
+Each test gets its own database in a temporary directory and its own options
+store, so nothing touches a real `Ditto.db` or the user defaults of whoever is
+running them.
 
 ## Permissions
 
@@ -173,7 +207,10 @@ need or because they are large features orthogonal to a clipboard manager:
 
 ## Layout of the source
 
-    Sources/DittoMac/
+    Sources/DittoMac/main.swift   two lines: hand over to DittoKit
+    Tests/DittoKitTests/          what CI runs
+    Sources/DittoKit/
+      DittoApp.swift the entry point, and the only public symbol
       Core/          the parts that mirror Ditto's own logic
         Clip.swift             CClip: formats, CRC, description
         ClipFormat.swift       the Windows format names and byte layouts

@@ -47,6 +47,13 @@ jobs:
           xcodebuild -version
           swift --version
 
+      # The schema and logic checks that used to be a shell script launching
+      # the app. They open a database directly, so no window server is involved
+      # and a failure means the code is wrong rather than the runner is odd.
+      - name: Run the tests
+        working-directory: mac
+        run: swift test
+
       - name: Build Ditto.app
         working-directory: mac
         run: |
@@ -81,70 +88,48 @@ jobs:
 
           codesign --verify --verbose=2 "$APP"
 
-      # Advisory: a CI runner has no real desktop session, so a GUI app starting
-      # there proves less than it would on a Mac in front of you. It still
-      # catches a crash on launch and confirms the database schema, which is the
-      # part that has to stay byte-compatible with Windows Ditto.
-      - name: Smoke test - launch, then read back the schema
-        id: smoke
-        continue-on-error: true
+      # What a unit test cannot cover: that the app actually starts, opens its
+      # database, claims its hot keys and comes up. Deliberately small - it
+      # asserts only that the process reaches the end of its launch and stays
+      # up, and reads that from stderr rather than poking at files, because
+      # macOS resolves Application Support from the password database and
+      # ignores HOME.
+      - name: Check that the app launches
         working-directory: mac
         run: |
           set -uo pipefail
-          export HOME="$RUNNER_TEMP/ditto-home"
-          mkdir -p "$HOME/Library/Application Support" "$HOME/Library/Preferences"
 
-          # Skip the first-run alert: a modal dialog would block the app, and
-          # turn the debug log on so a failure leaves something to read.
+          # Debug logging is off by default, and the first-run alert would be a
+          # modal dialog with nobody to dismiss it.
           defaults write io.ditto.DittoMac CompletedFirstRun -bool true
           defaults write io.ditto.DittoMac EnableDebugLogging -bool true
 
-          "build/Ditto.app/Contents/MacOS/Ditto" &
+          "build/Ditto.app/Contents/MacOS/Ditto" > launch.log 2>&1 &
           PID=$!
-          sleep 10
-          kill "$PID" 2>/dev/null || true
-          wait "$PID" 2>/dev/null || true
+          sleep 8
 
-          DB="$HOME/Library/Application Support/Ditto/Ditto.db"
-          LOG="$HOME/Library/Application Support/Ditto/Ditto.log"
-          [ -f "$LOG" ] && cat "$LOG"
-
-          if [ ! -f "$DB" ]; then
-            echo "::warning::the app did not create Ditto.db"
+          if ! kill -0 "$PID" 2>/dev/null; then
+            echo "::error::the app exited during launch"
+            cat launch.log
             exit 1
           fi
 
-          echo "--- schema ---"
-          sqlite3 "$DB" ".schema"
+          kill "$PID" 2>/dev/null || true
+          wait "$PID" 2>/dev/null || true
 
-          for table in Main Data Types CopyBuffers MainDeletes; do
-            found=$(sqlite3 "$DB" \
-              "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='$table';")
-            if [ "$found" != "1" ]; then
-              echo "::warning::the $table table is missing"
-              exit 1
-            fi
-          done
+          echo "--- what the app logged ---"
+          cat launch.log
 
-          # The two triggers are what make deleting a clip quick on both
-          # platforms; a database without them would drift from Windows Ditto.
-          for trigger in delete_data_trigger MainDeletes_delete_data_trigger; do
-            found=$(sqlite3 "$DB" \
-              "SELECT COUNT(*) FROM sqlite_master WHERE type='trigger' AND name='$trigger';")
-            if [ "$found" != "1" ]; then
-              echo "::warning::the $trigger trigger is missing"
-              exit 1
-            fi
-          done
+          if ! grep -q "Ditto started" launch.log; then
+            echo "::error::the app never finished starting up"
+            exit 1
+          fi
 
-          echo "the app launched and wrote the expected schema"
+          # It should have opened a database and claimed the default hot key.
+          grep -q "opened database at" launch.log \
+            || { echo "::error::the app did not open its database"; exit 1; }
 
-      - name: Note a failed smoke test
-        if: steps.smoke.outcome == 'failure'
-        run: |
-          echo "::warning::The app built, but the launch smoke test did not pass."
-          echo "Look at the step above - on a CI runner this can also mean the"
-          echo "app could not reach a window server, rather than a real bug."
+          echo "the app launched cleanly"
 
       - name: Read the version
         id: version

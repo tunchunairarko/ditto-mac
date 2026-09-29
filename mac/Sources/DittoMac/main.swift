@@ -1,5 +1,4 @@
-import Foundation
-import AppKit
+import DittoKit
 
 // Ditto for macOS.
 //
@@ -7,8 +6,8 @@ import AppKit
 // options and - importantly - its database format. See mac/README.md for what
 // carried over unchanged, what had to be rebuilt on macOS terms, and what is
 // deliberately not here.
+//
+// Everything lives in the DittoKit library so that it can be unit tested; this
+// file only starts it.
 
-let application = NSApplication.shared
-let delegate = AppDelegate()
-application.delegate = delegate
-application.run()
+DittoApp.run()

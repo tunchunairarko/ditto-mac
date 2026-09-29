@@ -48,21 +48,25 @@ There is no Xcode project: it is a Swift package, and the `Makefile` wraps
 
 ## Continuous integration
 
-`.github/workflows/macos.yml` builds this on every push and pull request that
-touches `mac/`, and can be started by hand from the Actions tab. It:
+`.github/workflows/macos.yml` builds this on every push to `dev` or `master`
+and on every pull request that touches `mac/`, and can be started by hand from
+the Actions tab. It:
 
 - runs the tests (see below) first, so a logic failure does not wait on a build
-- builds `Ditto.app` - universal on `master`, for the runner's own architecture
-  on a pull request, where quicker feedback is worth more
+- builds `Ditto.app` - universal on `dev` and `master`, for the runner's own
+  architecture on a pull request, where quicker feedback is worth more
 - checks the bundle: both architectures present, `Info.plist` valid, the
   `LSUIElement` flag set, the ad-hoc signature verifying
 - starts the app and reads its log back, to confirm it gets through launch,
   opens its database and claims its hot keys
-- uploads the zipped app as a build artifact, and attaches it to a GitHub
-  release when one is published
+- uploads the zipped app as a build artifact, named after the branch and the
+  commit, and attaches it to a GitHub release when one is published
 
+Work lands on `dev` first and `master` is what ships, so both publish a build.
 The Windows workflows ignore `mac/`, so a change here never cuts a Windows
-release, and a change to the Windows source never starts a macOS build.
+release, and a change to the Windows source never starts a macOS build. Note
+that the Windows release workflow still fires only on `master` - pushing to
+`dev` does not sign an installer or push to Chocolatey.
 
 ## Tests
 

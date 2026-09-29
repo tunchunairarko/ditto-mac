@@ -7,8 +7,12 @@ name: macOS
 on:
   push:
     branches:
+      # dev is where work lands first; master is what ships. A push to either
+      # publishes a universal build as an artifact. Feature branches are covered
+      # by the pull_request trigger below, so they are not listed here - being
+      # in both would run every commit twice.
+      - dev
       - master
-      - 'claude/**'
     paths:
       - 'mac/**'
       - '.github/workflows/macos.yml'
@@ -139,12 +143,14 @@ jobs:
           VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
             build/Ditto.app/Contents/Info.plist)
 
-          # A release asset is named after the tag; anything else carries the
-          # commit, so two artifacts from the same day cannot be confused.
+          # A release asset is named after the tag. Anything else carries the
+          # branch and the commit, so a dev build and a master build cannot be
+          # confused for one another.
           if [ "${{ github.event_name }}" = "release" ]; then
             NAME="Ditto-macOS-${{ github.event.release.tag_name }}"
           else
-            NAME="Ditto-macOS-$VERSION-${GITHUB_SHA:0:8}"
+            BRANCH=$(echo "${{ github.ref_name }}" | tr '/' '-')
+            NAME="Ditto-macOS-$VERSION-$BRANCH-${GITHUB_SHA:0:8}"
           fi
 
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"

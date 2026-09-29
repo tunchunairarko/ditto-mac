@@ -4,6 +4,8 @@ on:
   pull_request:
     paths-ignore:
       - '**/README.md'
+      # The macOS port has its own workflow.
+      - 'mac/**'
 
 env:
   SOLUTION_FILE_PATH: CP_Main_10.sln

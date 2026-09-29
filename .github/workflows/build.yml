@@ -6,6 +6,9 @@ on:
       - master
     paths-ignore:
       - '**/*.md'
+      # The macOS port has its own workflow; a change confined to it must not
+      # cut a Windows release.
+      - 'mac/**'
 
 env:
   SOLUTION_FILE_PATH: CP_Main_10.sln

@@ -24,6 +24,13 @@ Ditto is an extension to the standard windows clipboard. It saves each item plac
 3. Open Ditto by clicking its icon in the system tray or by pressing its Hot Key which defaults to Ctrl + ` – i.e. hold down Ctrl and press the back-quote (tilde ~) key.
 4. Double click or press enter on the item to paste it to the previous window.
 
+## macOS
+
+A native macOS port lives in [`mac/`](mac). It keeps Ditto's behaviour, options
+and database format - the same `Ditto.db` can be used from either platform - and
+is built with `cd mac && make`. See [mac/README.md](mac/README.md) for what
+carried over, what macOS does differently, and what is not ported.
+
 ## Local First
 - No login
 - No cloud

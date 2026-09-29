@@ -73,3 +73,9 @@ Debug/portable
 /FocusHighlight
 /focusdll
 /x64
+
+# macOS port build output
+/mac/.build
+/mac/build
+/mac/.swiftpm
+.DS_Store

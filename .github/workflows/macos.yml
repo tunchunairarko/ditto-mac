@@ -1,0 +1,199 @@
+name: macOS
+
+# Builds the macOS port in mac/ - a Swift package that the Makefile wraps into
+# Ditto.app. Nothing here touches the Windows build, and the path filters keep
+# Windows-only changes from starting a macOS run.
+
+on:
+  push:
+    branches:
+      # dev is where work lands first; master is what ships. A push to either
+      # publishes a universal build as an artifact. Feature branches are covered
+      # by the pull_request trigger below, so they are not listed here - being
+      # in both would run every commit twice.
+      - dev
+      - master
+    paths:
+      - 'mac/**'
+      - '.github/workflows/macos.yml'
+  pull_request:
+    paths:
+      - 'mac/**'
+      - '.github/workflows/macos.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Ditto.app
+    runs-on: macos-latest
+
+    env:
+      # Pull requests build for this runner's architecture only, for quicker
+      # feedback. Everything else builds universal, which is what you would
+      # hand to someone.
+      UNIVERSAL: ${{ github.event_name == 'pull_request' && 'no' || 'yes' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show the toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      # The schema and logic checks that used to be a shell script launching
+      # the app. They open a database directly, so no window server is involved
+      # and a failure means the code is wrong rather than the runner is odd.
+      - name: Run the tests
+        working-directory: mac
+        run: swift test
+
+      - name: Build Ditto.app
+        working-directory: mac
+        run: |
+          if [ "$UNIVERSAL" = "yes" ]; then
+            make universal
+          else
+            make release
+          fi
+
+      - name: Check the bundle
+        working-directory: mac
+        run: |
+          set -euo pipefail
+          APP="build/Ditto.app"
+          BIN="$APP/Contents/MacOS/Ditto"
+
+          test -x "$BIN"
+          plutil -lint "$APP/Contents/Info.plist"
+
+          echo "architectures: $(lipo -archs "$BIN")"
+          if [ "$UNIVERSAL" = "yes" ]; then
+            for arch in arm64 x86_64; do
+              lipo -archs "$BIN" | tr ' ' '\n' | grep -qx "$arch" \
+                || { echo "::error::the binary is missing $arch"; exit 1; }
+            done
+          fi
+
+          # The port is a menu bar app; LSUIElement missing would give it a Dock
+          # icon and a main window it does not have.
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSUIElement' "$APP/Contents/Info.plist")" = "true"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist"
+
+          codesign --verify --verbose=2 "$APP"
+
+      # What a unit test cannot cover: that the app actually starts, opens its
+      # database, claims its hot keys and comes up. Deliberately small - it
+      # asserts only that the process reaches the end of its launch and stays
+      # up, and reads that from stderr rather than poking at files, because
+      # macOS resolves Application Support from the password database and
+      # ignores HOME.
+      - name: Check that the app launches
+        working-directory: mac
+        run: |
+          set -uo pipefail
+
+          # Debug logging is off by default, and the first-run alert would be a
+          # modal dialog with nobody to dismiss it.
+          defaults write io.ditto.DittoMac CompletedFirstRun -bool true
+          defaults write io.ditto.DittoMac EnableDebugLogging -bool true
+
+          "build/Ditto.app/Contents/MacOS/Ditto" > launch.log 2>&1 &
+          PID=$!
+          sleep 8
+
+          if ! kill -0 "$PID" 2>/dev/null; then
+            echo "::error::the app exited during launch"
+            cat launch.log
+            exit 1
+          fi
+
+          kill "$PID" 2>/dev/null || true
+          wait "$PID" 2>/dev/null || true
+
+          echo "--- what the app logged ---"
+          cat launch.log
+
+          if ! grep -q "Ditto started" launch.log; then
+            echo "::error::the app never finished starting up"
+            exit 1
+          fi
+
+          # It should have opened a database and claimed the default hot key.
+          grep -q "opened database at" launch.log \
+            || { echo "::error::the app did not open its database"; exit 1; }
+
+          echo "the app launched cleanly"
+
+      - name: Read the version
+        id: version
+        working-directory: mac
+        run: |
+          set -euo pipefail
+          VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+            build/Ditto.app/Contents/Info.plist)
+
+          # A release asset is named after the tag. Anything else carries the
+          # branch and the commit, so a dev build and a master build cannot be
+          # confused for one another.
+          if [ "${{ github.event_name }}" = "release" ]; then
+            NAME="Ditto-macOS-${{ github.event.release.tag_name }}"
+          else
+            BRANCH=$(echo "${{ github.ref_name }}" | tr '/' '-')
+            NAME="Ditto-macOS-$VERSION-$BRANCH-${GITHUB_SHA:0:8}"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Zip the app
+        working-directory: mac
+        run: |
+          set -euo pipefail
+          # ditto, rather than zip: it keeps the bundle's symlinks, permissions
+          # and the code signature intact.
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/Ditto.app "build/${{ steps.version.outputs.name }}.zip"
+          ls -lh build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.name }}
+          path: mac/build/${{ steps.version.outputs.name }}.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Attach to the release
+    needs: build
+    if: github.event_name == 'release'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Upload to the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          ls -lh artifacts
+          gh release upload "$TAG" artifacts/*.zip --clobber

@@ -361,7 +361,7 @@ final class QuickPasteWindowController: NSWindowController,
             groupLabel.isHidden = false
             backButton.isHidden = false
         } else if groupID >= 0 {
-            let name = (try? repository.groupName(id: groupID)) ?? nil
+            let name = try? repository.groupName(id: groupID)
             groupLabel.stringValue = name ?? "Group"
             groupLabel.isHidden = false
             backButton.isHidden = false
@@ -793,7 +793,7 @@ final class QuickPasteWindowController: NSWindowController,
         do {
             try repository.delete(ids: ids)
         } catch {
-            presentError(error)
+            presentFailure(error)
             return
         }
         reload(resetSelection: false)
@@ -812,7 +812,7 @@ final class QuickPasteWindowController: NSWindowController,
         do {
             try repository.setStarred(ids: selected.map { $0.id }, starred: makeStarred)
         } catch {
-            presentError(error)
+            presentFailure(error)
         }
     }
 
@@ -822,7 +822,7 @@ final class QuickPasteWindowController: NSWindowController,
         do {
             try repository.setSticky(ids: ids, position: position, inGroup: groupID)
         } catch {
-            presentError(error)
+            presentFailure(error)
         }
     }
 
@@ -832,7 +832,7 @@ final class QuickPasteWindowController: NSWindowController,
         do {
             try repository.moveToTop(ids: ids, inGroup: groupID)
         } catch {
-            presentError(error)
+            presentFailure(error)
         }
     }
 
@@ -842,7 +842,7 @@ final class QuickPasteWindowController: NSWindowController,
         do {
             try repository.moveToLast(ids: ids, inGroup: groupID)
         } catch {
-            presentError(error)
+            presentFailure(error)
         }
     }
 
@@ -856,7 +856,7 @@ final class QuickPasteWindowController: NSWindowController,
             _ = try repository.createGroup(named: name, parentID: groupID)
             reload(resetSelection: false)
         } catch {
-            presentError(error)
+            presentFailure(error)
         }
     }
 
@@ -869,7 +869,7 @@ final class QuickPasteWindowController: NSWindowController,
             try repository.move(ids: ids, toGroup: target)
             reload(resetSelection: false)
         } catch {
-            presentError(error)
+            presentFailure(error)
         }
     }
 
@@ -878,7 +878,7 @@ final class QuickPasteWindowController: NSWindowController,
         ClipProperties.show(for: item, window: window)
     }
 
-    private func presentError(_ error: Error) {
+    private func presentFailure(_ error: Error) {
         let alert = NSAlert()
         alert.messageText = "Ditto could not finish that"
         alert.informativeText = "\(error)"
@@ -980,7 +980,7 @@ final class QuickPasteWindowController: NSWindowController,
         do {
             try repository.setQuickPasteText(id: item.id, text: text)
         } catch {
-            presentError(error)
+            presentFailure(error)
         }
     }
 
@@ -999,7 +999,7 @@ final class QuickPasteWindowController: NSWindowController,
             }
             HotKeyManager.shared.reload(controller: DittoController.shared)
         } catch {
-            presentError(error)
+            presentFailure(error)
         }
     }
 

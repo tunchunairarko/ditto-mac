@@ -45,16 +45,14 @@ final class ThumbnailCache {
             }
 
             var image: NSImage?
-            let pngResult = try? ClipRepository.shared.loadFormat(clipID: clipID,
-                                                                  format: ClipFormat.png)
-            if let png = pngResult ?? nil, png.isEmpty == false {
+            if let png = try? ClipRepository.shared.loadFormat(clipID: clipID,
+                                                               format: ClipFormat.png),
+               png.isEmpty == false {
                 image = NSImage(data: png)
-            } else {
-                let dibResult = try? ClipRepository.shared.loadFormat(clipID: clipID,
-                                                                      format: ClipFormat.dib)
-                if let dib = dibResult ?? nil, dib.isEmpty == false {
-                    image = BitmapHelper.image(fromDIB: dib)
-                }
+            } else if let dib = try? ClipRepository.shared.loadFormat(clipID: clipID,
+                                                                      format: ClipFormat.dib),
+                      dib.isEmpty == false {
+                image = BitmapHelper.image(fromDIB: dib)
             }
 
             guard let loaded = image else { return }

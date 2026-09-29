@@ -357,7 +357,7 @@ final class SQLiteDatabase {
     func tableExists(_ name: String) -> Bool {
         let sql = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?"
         guard let count = try? scalarInt(sql, [name]) else { return false }
-        return (count ?? 0) > 0
+        return count > 0
     }
 
     func columnExists(table: String, column: String) -> Bool {
@@ -371,7 +371,7 @@ final class SQLiteDatabase {
     }
 
     var userVersion: Int {
-        get { ((try? scalarInt("PRAGMA user_version")) ?? 0) ?? 0 }
+        get { (try? scalarInt("PRAGMA user_version")) ?? 0 }
         set { _ = try? execute("PRAGMA user_version = \(newValue)") }
     }
 }

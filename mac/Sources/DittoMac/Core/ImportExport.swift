@@ -23,8 +23,7 @@ enum ImportExport {
     }
 
     private static func exportSingle(id: Int, window: NSWindow?) {
-        let loaded = try? ClipRepository.shared.loadClip(id: id)
-        guard let clip = loaded ?? nil else { return }
+        guard let clip = try? ClipRepository.shared.loadClip(id: id) else { return }
 
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
@@ -53,8 +52,7 @@ enum ImportExport {
         panel.begin { response in
             guard response == .OK, let directory = panel.url else { return }
             for (index, id) in ids.enumerated() {
-                let loaded = try? ClipRepository.shared.loadClip(id: id)
-                guard let clip = loaded ?? nil else { continue }
+                guard let clip = try? ClipRepository.shared.loadClip(id: id) else { continue }
                 let name = String(format: "%03d-", index + 1) + suggestedFileName(for: clip)
                 do {
                     try write(clip: clip, to: directory.appendingPathComponent(name))

@@ -112,8 +112,7 @@ final class ClipEditorWindowController: NSWindowController, NSWindowDelegate {
     }
 
     private func load() {
-        guard let loaded = try? ClipRepository.shared.loadClip(id: clipID),
-              let clip = loaded else {
+        guard let clip = try? ClipRepository.shared.loadClip(id: clipID) else {
             textView.string = ""
             return
         }

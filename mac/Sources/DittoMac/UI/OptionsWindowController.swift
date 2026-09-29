@@ -109,8 +109,8 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
             Options.shared.notifyChanged()
         }
         button.target = handler
-        button.action = #selector(ActionHandler.perform(_:))
-        retain(handler)
+        button.action = #selector(ActionHandler.invoke(_:))
+        keepAlive(handler)
         return button
     }
 
@@ -134,8 +134,8 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
             Options.shared.notifyChanged()
         }
         field.target = handler
-        field.action = #selector(ActionHandler.perform(_:))
-        retain(handler)
+        field.action = #selector(ActionHandler.invoke(_:))
+        keepAlive(handler)
 
         row.addArrangedSubview(label)
         row.addArrangedSubview(field)
@@ -163,8 +163,8 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
             Options.shared.notifyChanged()
         }
         field.target = handler
-        field.action = #selector(ActionHandler.perform(_:))
-        retain(handler)
+        field.action = #selector(ActionHandler.invoke(_:))
+        keepAlive(handler)
 
         row.addArrangedSubview(label)
         row.addArrangedSubview(field)
@@ -193,8 +193,8 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
             Options.shared.notifyChanged()
         }
         popup.target = handler
-        popup.action = #selector(ActionHandler.perform(_:))
-        retain(handler)
+        popup.action = #selector(ActionHandler.invoke(_:))
+        keepAlive(handler)
 
         row.addArrangedSubview(label)
         row.addArrangedSubview(popup)
@@ -233,8 +233,8 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
             Options.shared.notifyChanged()
         }
         button.target = handler
-        button.action = #selector(ActionHandler.perform(_:))
-        retain(handler)
+        button.action = #selector(ActionHandler.invoke(_:))
+        keepAlive(handler)
 
         row.addArrangedSubview(label)
         row.addArrangedSubview(button)
@@ -247,8 +247,8 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
         button.bezelStyle = .rounded
         let handler = ActionHandler { _ in action() }
         button.target = handler
-        button.action = #selector(ActionHandler.perform(_:))
-        retain(handler)
+        button.action = #selector(ActionHandler.invoke(_:))
+        keepAlive(handler)
         return button
     }
 
@@ -262,7 +262,7 @@ final class OptionsWindowController: NSWindowController, NSWindowDelegate {
 
     /// Keep the small action objects alive for as long as the window is.
     private var handlers: [ActionHandler] = []
-    private func retain(_ handler: ActionHandler) {
+    private func keepAlive(_ handler: ActionHandler) {
         handlers.append(handler)
     }
 
@@ -747,7 +747,7 @@ final class ActionHandler: NSObject {
         self.handler = handler
     }
 
-    @objc func perform(_ sender: Any?) {
+    @objc func invoke(_ sender: Any?) {
         handler(sender)
     }
 }
